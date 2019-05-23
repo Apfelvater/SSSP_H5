@@ -10,39 +10,77 @@ static int pcs = 0;
 static int servers = 0;
 static int monitors = 0;
 
-void* process_H() {
-    printf("process_H Critical Section Start <<\n");
-    pcs += 3;
-    servers += 1;
-    monitors += 2;
-    printf("process_H Critical Section End   >>\n");
-    return 0;
-}
-
-void* process_D() {
-    printf("process_D Critical Section Start <<\n");
-    pcs -= 1;
-    monitors -= 1;
-    printf("process_D Critical Section End   >>\n");
-    return 0;
-}
-
-void* process_S() {
-    printf("process_S Critical Section Start <<\n");
-    servers -= 1;
-    printf("process_S Critical Section End   >>\n");
-    return 0;
-}
-
-
-static char* execution = "HDSSSDHHDHSHHHD";
-
 sem_t space, dock, wait4space, wait4items, pc, server, monitor;
 
-int main() {    //TODO: Constraints beachten: anzahl geht unter 0, und über 24, (etc?)
+void* process_H(int* id) {
+    printf("H_Process-Truck %d arrives!\n", *id);
+    sem_wait(&wait4space);
+        for (int i = 0; i < 5; i++) { sem_wait(&space); }
+    sem_post(&wait4space);
+    sem_wait(&dock);
+        printf("H_Process#%d Critical Section Start <\n", *id);
+        pcs += 2;
+        servers += 1;
+        monitors += 2;
+        printf("PCs:%d,SVs:%d,MTs:%d\n", pcs, servers, monitors);
+        printf("H_Process#%d Critical Section End   >\n", *id);
+    sem_post(&dock);
+    sem_post(&server);
+    sem_post(&pc);
+    //sem_post(&pc);    *DOING ONLY 2 PC LOADS*
+    sem_post(&pc);
+    sem_post(&monitor);
+    sem_post(&monitor);
+    printf("H_Process-Truck %d drives away...\n", *id);
+
+    pthread_exit(0);
+    return 0;
+}
+
+void* process_D(int* id) {
+    printf("D_Process-Truck %d arrives!\n", *id);
+    sem_wait(&wait4items);
+        sem_wait(&pc);
+        sem_wait(&monitor);
+    sem_post(&wait4items);
+    sem_wait(&dock);
+        printf("D_Process#%d Critical Section Start <\n", *id);
+        pcs -= 1;
+        monitors -= 1;
+        printf("PCs:%d,SVs:%d,MTs:%d\n", pcs, servers, monitors);
+        printf("D_Process#%d Critical Section End   >\n", *id);
+    sem_post(&dock);
+    sem_post(&space);
+    sem_post(&space);
+    printf("D_Process-Truck %d drives away...\n", *id);
+
+    pthread_exit(0);
+    return 0;
+}
+
+void* process_S(int* id) {
+    printf("S_Process-Truck %d arrives!\n", *id);
+    sem_wait(&server);
+    sem_wait(&dock);
+        printf("S_Process#%d Critical Section Start <\n", *id);
+        servers -= 1;
+        printf("PCs:%d,SVs:%d,MTs:%d\n", pcs, servers, monitors);
+        printf("S_Process#%d Critical Section End   >\n", *id);
+    sem_post(&dock);
+    sem_post(&space);
+    printf("S_Process-Truck %d drives away...\n", *id);
+
+    pthread_exit(0);
+    return 0;
+}
+
+
+static char* execution = "HDSSSDHDDHSS";
+
+int main() { 
     sem_init(&space, 1, 24);
     sem_init(&dock, 1, 1);
-    sem_init(&wait4items, 1, 1);
+    sem_init(&wait4space, 1, 1);
     sem_init(&wait4items, 1, 1);
     sem_init(&pc, 1, 0);
     sem_init(&server, 1, 0);
@@ -66,20 +104,22 @@ int main() {    //TODO: Constraints beachten: anzahl geht unter 0, und über 24,
         }
         
         
-        rc = pthread_create(&threads[i], NULL, process_X, NULL);
+        rc = pthread_create(&threads[i], NULL, process_X, &i);
         i++;
-        if (rc) {
-            printf("ERROR; return code from pthread_create() is %d\n", rc);
-            exit(-1);
-        }
     }
-    
+
+    if (hc * 2 - dc < 0 || hc * 2 - dc < 0 || hc - sc < 0) {
+        printf("Some Trucks will endlessly wait for items. Exiting...\n");
+        exit(-1);
+    }
     for (int i = 0; i < n_ops; i++) {
         pthread_join(threads[i], NULL);
     }
-        
+
     printf("Final Stock is:\n\tPCs: %d\n\tMonitors: %d\n\tServers: %d\n", pcs, monitors, servers);
-    printf("Right values: (%d, %d, %d)\n", hc * 3 - dc, hc * 2 - dc, hc - sc); 
-        
+    printf("Right values: (%d, %d, %d)\n", hc * 2 - dc, hc * 2 - dc, hc - sc); 
+
+    pthread_exit(0);
+
     return 0;
 }
